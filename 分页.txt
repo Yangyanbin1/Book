@@ -1,0 +1,157 @@
+﻿分页查询
+	问题:什么是分页，为什么使用分页?
+		分页就是将数据以多页去展示，使用分页可以提高客户的感受。
+		
+	分页分类:
+		1.物理分页
+			只从数据库中查询出当前页的数据。
+			优点:不占用很多内存
+			缺点:效率比较低
+		2.逻辑分页
+			从数据库中将所有记录查询出业，存储到内存中，要想展示当前页数据，直接从内存中获取。
+			优点:效率高
+			缺点:占用内存比较高
+			
+		在java开发领域，我们使用的比较多的是物理分页。
+			使用数据库本身提供的分页操作.
+				会使用每一个数据库特定的分页函数，优点:性能高  缺点:不能跨数据库。
+				mysql:limit
+				sqlservlet:top
+				oracle:rownum
+					
+		limit使用.
+			select * from 表 limit m,n;
+			m：代表的是从第几条开始  注意:它是从0开始记录.
+			n:代表查询几条记录.
+			
+			示例:分页时，每页显示5条，要查询第2页的数据.
+				
+				select * from 表  limit  (页码-1)*每页条数,每页条数;
+
+	------------------------------------------------------------------------------
+	分页分析:
+		1.页码  默认第一页  
+		2.每页条数   人为定义
+		3.总条数   select count(*) from 表
+		4.总页数   总页数=总条数%每页条数==0?总条数/每页条数:总条数/每页条数+1
+					   总页数=Math.ceil(总条数*1.0/每页条数);
+					
+		5.当前页的数据  List<?>----->select * from 表  
+							limit  (页码-1)*每页条数,每页条数;	
+
+	----------------------------------------------------------------------------------		
+	分页代码实现:
+		
+		1.在index.html页面上
+				<h2><a href = "ListLeagueByPageServlet">列出所有联赛(分页展示)</a></h2>
+
+		2.创建ListLeagueByPageServlet完成分页
+
+				问题:要向页面携带的数据有很多，不仅是要展示的数据，例如:页码，总页数等，都需要携带到页面上，怎样处理?
+					解决方案:可以创建一个分页Bean,在这个Bean中封装所有关于分页相关的数据.
+					private int currentNum;  //页数
+					private int currentPage; //条数
+					private int totalPage;	 //总页数
+					private int totalCount;	 //总条数
+					private List<League> list;  //每页显示的数据
+				
+				int currentNum = 1; //页码
+				int currentPage = 5;//显示条数
+				String s_currentNum = request.getParameter("currentNum");
+				String s_currentPage = request.getParameter("currentPage");
+				if(s_currentNum != null)
+					currentNum = Integer.parseInt(s_currentNum);
+				
+				if(s_currentPage != null)
+					currentPage = Integer.parseInt(s_currentPage);
+				
+				LeagueService service = LeagueService.getService();
+				PageBean pb;
+				try {
+					pb = service.findByPage(currentNum,currentPage);
+					request.setAttribute("pb", pb);
+					request.getRequestDispatcher("ListLeaguePage.jsp").forward(request, response);
+				} catch (SQLException e) {
+					e.printStackTrace();
+				}
+					
+				Service类：
+				public PageBean findByPage(int currentNum, int currentPage) throws SQLException {
+					PageBean pb = new PageBean();
+					List<League> list =  dao.findByPage(currentNum,currentPage);
+					int totalCount = dao.findCount();
+					int totalPage = (int) Math.ceil(totalCount*1.0/currentPage);
+					pb.setList(list);
+					pb.setCurrentPage(currentPage);
+					pb.setCurrentNum(currentNum);
+					pb.setTotalCount(totalCount);
+					pb.setTotalPage(totalPage);
+					return pb;
+				}
+				
+				DAO类：
+				public List<League> findByPage(int currentNum, int currentPage) {
+					String sql = "select * from league limit ?,?";
+					return JDBCTemplate.query(sql, 
+							new BeanListHandler<>(League.class), (currentNum-1)*currentPage,currentPage);
+				}
+				public int findCount() throws SQLException { //这里是用工具类了
+					String sql = "select count(*) from league";
+					QueryRunner runner = new QueryRunner(DataSourceUtils.getDataSource());
+					long count = (long) runner.query(sql, new ScalarHandler());
+					return (int)count;
+				}
+		3.在ListLeaguePage.jsp页面上添加
+				<a href="findAllByPage?currentNum=1">首页</a>&nbsp;&nbsp;&nbsp;
+				<a href="findAllByPage?currentNum=${pb.currentNum-1}">上一页</a>&nbsp;&nbsp;&nbsp;
+				<a href="findAllByPage?currentNum=${pb.currentNum+1 }">下一页</a>&nbsp;&nbsp;&nbsp;
+				<a href="findAllByPage?currentNum=${pb.totalPage }">尾页</a>&nbsp;&nbsp;&nbsp;
+				
+			在ListLeagueByPageServlet中处理请求参数 currentNum
+				int currentNum = 1;
+				String s_currentNum = request.getParameter("currentNum");
+				if (s_currentNum != null) {
+					currentNum = Integer.parseInt(s_currentNum);
+				}
+			
+			问题:怎样控制上一页，下一页。
+				条件判断就可以解决.
+				<center>
+					<a href="ListLeagueByPageServlet?currentNum=1">首页</a>&nbsp;&nbsp;
+					
+					<c:if test="${pb.currentNum == 1 }">
+						上一页&nbsp;&nbsp;
+					</c:if>
+					<c:if test="${pb.currentNum != 1 }">
+						<a href="ListLeagueByPageServlet?currentNum=${pb.currentNum-1 }">上一页</a>&nbsp;&nbsp;
+					</c:if>
+					
+					<c:if test="${pb.currentNum == pb.totalPage }">
+						下一页&nbsp;&nbsp;
+					</c:if>
+					<c:if test="${pb.currentNum != pb.totalPage }">
+						<a href="ListLeagueByPageServlet?currentNum=${pb.currentNum+1 }">下一页</a>&nbsp;&nbsp;
+					</c:if>
+					
+					<a href="ListLeagueByPageServlet?currentNum=${pb.totalPage }">尾页</a><br/><br/>
+				</center>
+	--------------------------------------------------------------------
+	分页扩展:
+		设定每页显示条数			
+			在ListLeaguePage.jsp页面上添加一个<select>
+						<select name="currentPage" onchange="changeCurrentPage(this.value);">
+							<option>--请选择每页条数--</option>
+							<option value="5">5</option>
+							<option value="10">10</option>
+							<option value="20">20</option>
+						</select>
+						
+					function changeCurrentPage(value){		
+						location.href="findAllByPage?currentPage="+value;
+					};	
+			
+			2.在首页，上一页，下一页，尾页的连接上也要添加每页显示条数。
+				例如:
+				<a href="ListLeagueByPageServlet?currentNum=1&currentPage=${pb.currentPage}">首页</a>
+				
+		
